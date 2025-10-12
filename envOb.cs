@@ -3,6 +3,7 @@ using System.Text;
 
 using BepInEx;
 using System.Reflection;
+using InControl;
 
 public static class HealthManagerUtils {
     private static readonly FieldInfo initHpField =
@@ -21,7 +22,7 @@ public class CombatDebugger : BaseUnityPlugin {
 
     private static new readonly BepInEx.Logging.ManualLogSource Logger =
         BepInEx.Logging.Logger.CreateLogSource("CombatDebugger");
-    private int frameCounter = 0;
+
     void Awake() {
         Logger.LogInfo("Loaded...");
     }
@@ -31,6 +32,24 @@ public class CombatDebugger : BaseUnityPlugin {
             LogInfo();
         }
 
+        handleInput();
+    }
+    
+    private void handleInput() {
+        var hero = HeroController.instance;
+        if (hero != null) {
+            var field = typeof(HeroController).GetField("inputHandler",
+                BindingFlags.NonPublic | BindingFlags.Instance);
+            var heroInput = (InputHandler)field.GetValue(hero);
+            var deltaTime = Time.deltaTime;
+            ulong tick = InputManager.CurrentTick + 1;
+            if (Input.GetKey(KeyCode.Keypad3)) {
+                heroInput.inputActions.Right.CommitWithState(true, tick, deltaTime);
+            }
+            else {
+                heroInput.inputActions.Right.CommitWithState(false, tick, deltaTime);
+            }
+        }
     }
 
     private void LogInfo() {
