@@ -1,0 +1,42 @@
+# Build output
+/bin/
+/obj/
+/[Bb]uild/
+/[Ll]og/
+/[Rr]elease/
+/[Dd]ebug/
+/x64/
+/x86/
+/[Aa][Rr][Mm]/
+/[Aa][Rr][Mm]64/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.csproj.user
+
+# Unity / BepInEx modding
+*.dll
+*.pdb
+*.mdb
+*.exe
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# NuGet / packages
+*.nupkg
+*.snupkg
+packages/
+.nuget/
+
+# Generated files
+*.cache
+*.log
+
+# Shell scripts / local helpers
+load.sh
