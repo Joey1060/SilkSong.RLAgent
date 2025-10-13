@@ -33,6 +33,19 @@ public class CombatDebugger : BaseUnityPlugin {
         }
 
         handleInput();
+
+        if (Input.GetKeyDown(KeyCode.Keypad0)) {
+            GameManager.instance.BeginSceneTransition(new GameManager.SceneLoadInfo
+            {
+                PreventCameraFadeOut = true,
+                WaitForSceneTransitionCameraFade = false,
+                EntryGateName = "left2",
+                SceneName = "Mosstown_02c",
+                Visualization = GameManager.SceneLoadVisualizations.Default,
+                AlwaysUnloadUnusedAssets = true,
+                IsFirstLevelForPlayer = false,
+            });
+        }
     }
     
     private void handleInput() {

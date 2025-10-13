@@ -1,42 +1,51 @@
-# Build output
-/bin/
-/obj/
-/[Bb]uild/
-/[Ll]og/
-/[Rr]elease/
-/[Dd]ebug/
-/x64/
-/x86/
-/[Aa][Rr][Mm]/
-/[Aa][Rr][Mm]64/
-
-# Visual Studio / Rider
-.vs/
-.idea/
+# ---- .NET / C# build artifacts ----
+bin/
+obj/
 *.user
 *.suo
-*.userprefs
-*.csproj.user
-
-# Unity / BepInEx modding
-*.dll
+*.cache
 *.pdb
 *.mdb
-*.exe
+*.log
+*.vs/
+*.dbmdl
 
-# OS junk
+# ---- Python build / cache ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.manifest
+*.spec
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+
+# ---- Jupyter / notebooks ----
+.ipynb_checkpoints/
+
+# ---- IDE / Editor settings ----
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---- OS-specific ----
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# NuGet / packages
-*.nupkg
-*.snupkg
-packages/
-.nuget/
-
-# Generated files
-*.cache
-*.log
-
-# Shell scripts / local helpers
-load.sh
+# ---- Misc ----
+*.bak
+*.tmp
+*.old
