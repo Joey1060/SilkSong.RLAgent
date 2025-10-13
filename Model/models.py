@@ -9,13 +9,15 @@ import numpy as np
 class SumTree:
     def __init__(self, capacity):
         self.capacity = capacity
-        self.tree = np.zeros(2 * capacity - 1, dtype=np.float32)  # binary tree
-        self.data = np.zeros(capacity, dtype=object)              # actual experiences
+        # tree has 2*capacity elements (index 1..2*capacity-1 used)
+        self.tree = np.zeros(2 * capacity, dtype=np.float32)
+        self.data = np.zeros(capacity, dtype=object)
         self.ptr = 0
         self.size = 0
 
     def add(self, priority, data):
-        idx = self.ptr + self.capacity - 1
+        # leaf index in tree array
+        idx = self.ptr + self.capacity
         self.data[self.ptr] = data
         self.update(idx, priority)
 
@@ -25,30 +27,30 @@ class SumTree:
     def update(self, idx, priority):
         change = priority - self.tree[idx]
         self.tree[idx] = priority
-        # propagate change up
-        while idx != 0:
-            idx = (idx - 1) // 2
+        # propagate change up to root
+        while idx > 1:
+            idx //= 2
             self.tree[idx] += change
 
     def get(self, s):
         """
         Find sample on the tree given cumulative sum s
         """
-        idx = 0
-        while idx < self.capacity - 1:  # while not at leaf
-            left = 2 * idx + 1
+        idx = 1  # start at root
+        while idx < self.capacity:  # while not at leaf
+            left = 2 * idx
             right = left + 1
             if s <= self.tree[left]:
                 idx = left
             else:
                 s -= self.tree[left]
                 idx = right
-        data_idx = idx - (self.capacity - 1)
+        data_idx = idx - self.capacity
         return idx, self.tree[idx], self.data[data_idx]
 
     @property
     def total(self):
-        return self.tree[0]
+        return self.tree[1]
 
 
 import torch
