@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import random
+from torchrl.modules import NoisyLinear
 
 import numpy as np
 
@@ -52,8 +53,6 @@ class SumTree:
     def total(self):
         return self.tree[1]
 
-
-import torch
 
 class PrioritizedReplayBuffer:
     def __init__(self, capacity, state_dim, alpha=0.6, beta=0.4, beta_increment=1e-6, device="cpu"):
@@ -126,14 +125,14 @@ class DuelingQNetwork(nn.Module):
         self.value = nn.Sequential(
             nn.Linear(last, last),
             nn.ReLU(),
-            nn.Linear(last, 1)
+            NoisyLinear(last, 1)
         )
 
         # Advantage stream: outputs vector A(s,·)
         self.advantage = nn.Sequential(
             nn.Linear(last, last),
             nn.ReLU(),
-            nn.Linear(last, action_dim)
+            NoisyLinear(last, action_dim)
         )
 
     def forward(self, state):
