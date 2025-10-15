@@ -1,8 +1,9 @@
 using UnityEngine;
+using System;
 using System.Text;
-
-using BepInEx;
 using System.Reflection;
+using System.Collections.Generic;
+using BepInEx;
 using InControl;
 
 public static class HealthManagerUtils {
@@ -14,6 +15,34 @@ public static class HealthManagerUtils {
             return -1; // fallback if something goes wrong
 
         return (int)initHpField.GetValue(hm);
+    }
+}
+
+public enum ModelInputAction {
+    Up = 1,
+    Down = 2,
+    Left = 4,
+    Right = 8
+}
+
+public delegate void InputActionInvoker(HeroActions ia, bool state, ulong tick, float deltaTime);
+
+public static class InputUtil {
+    private static Dictionary<ModelInputAction, InputActionInvoker> _map =
+        new Dictionary<ModelInputAction, InputActionInvoker>
+        {
+            { ModelInputAction.Up,    (ia, state, tick, deltaTime) => ia.Up.CommitWithState(state, tick, deltaTime) },
+            { ModelInputAction.Down,  (ia, state, tick, deltaTime) => ia.Down.CommitWithState(state, tick, deltaTime) },
+            { ModelInputAction.Left,  (ia, state, tick, deltaTime) => ia.Left.CommitWithState(state, tick, deltaTime) },
+            { ModelInputAction.Right, (ia, state, tick, deltaTime) => ia.Right.CommitWithState(state, tick, deltaTime) }
+        };
+
+    public static void GetAction(HeroActions heroInput, int actCode, bool state, ulong tick, float deltaTime) {
+        if (!Enum.IsDefined(typeof(ModelInputAction), actCode))
+            throw new ArgumentOutOfRangeException(nameof(actCode), "Invalid action code");
+
+        var act = (ModelInputAction)actCode;
+        _map[act](heroInput, state, tick, deltaTime);
     }
 }
 
@@ -32,11 +61,10 @@ public class CombatDebugger : BaseUnityPlugin {
             LogInfo();
         }
 
-        handleInput();
+        // handleInput();
 
         if (Input.GetKeyDown(KeyCode.Keypad0)) {
-            GameManager.instance.BeginSceneTransition(new GameManager.SceneLoadInfo
-            {
+            GameManager.instance.BeginSceneTransition(new GameManager.SceneLoadInfo {
                 PreventCameraFadeOut = true,
                 WaitForSceneTransitionCameraFade = false,
                 EntryGateName = "left2",
@@ -47,8 +75,9 @@ public class CombatDebugger : BaseUnityPlugin {
             });
         }
     }
-    
-    private void handleInput() {
+
+    private void handleInput(int[] modelInputActions) {
+        // TODO: change int[] to an int bitmask
         var hero = HeroController.instance;
         if (hero != null) {
             var field = typeof(HeroController).GetField("inputHandler",
@@ -56,11 +85,10 @@ public class CombatDebugger : BaseUnityPlugin {
             var heroInput = (InputHandler)field.GetValue(hero);
             var deltaTime = Time.deltaTime;
             ulong tick = InputManager.CurrentTick + 1;
-            if (Input.GetKey(KeyCode.Keypad3)) {
-                heroInput.inputActions.Right.CommitWithState(true, tick, deltaTime);
-            }
-            else {
-                heroInput.inputActions.Right.CommitWithState(false, tick, deltaTime);
+            for (int i = 0; i < modelInputActions.Length; ++i) {
+                int curActionCode = 1 << i;
+                bool curActionState = (modelInputActions[i] == 1);
+                InputUtil.GetAction(heroInput.inputActions, curActionCode, curActionState, tick, deltaTime);
             }
         }
     }
