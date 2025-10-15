@@ -10,6 +10,13 @@ public static class HealthManagerUtils {
     private static readonly FieldInfo initHpField =
         typeof(HealthManager).GetField("initHp", BindingFlags.NonPublic | BindingFlags.Instance);
 
+    private static readonly FieldInfo sceneLoad =
+        typeof(GameManager).GetField("sceneLoad", BindingFlags.NonPublic | BindingFlags.Instance);
+
+    public static SceneLoad GetSceneLoad(GameManager gm) {
+        return (SceneLoad)sceneLoad.GetValue(gm);
+    }
+
     public static int GetInitHp(HealthManager hm) {
         if (hm == null || initHpField == null)
             return -1; // fallback if something goes wrong
@@ -52,6 +59,9 @@ public class CombatDebugger : BaseUnityPlugin {
     private static new readonly BepInEx.Logging.ManualLogSource Logger =
         BepInEx.Logging.Logger.CreateLogSource("CombatDebugger");
 
+    private bool startOb = false;
+    private bool isSceneLoaded = false;
+
     void Awake() {
         Logger.LogInfo("Loaded...");
     }
@@ -59,11 +69,14 @@ public class CombatDebugger : BaseUnityPlugin {
         Time.timeScale = 2f;
         if (Input.GetKeyDown(KeyCode.Z)) {
             LogInfo();
+            // Logger.LogInfo()
         }
-
         // handleInput();
-
-        if (Input.GetKeyDown(KeyCode.Keypad0)) {
+        ListenForTrainingCommand();
+    }
+    
+    private void ListenForTrainingCommand() {
+        void ResetScene() {
             GameManager.instance.BeginSceneTransition(new GameManager.SceneLoadInfo {
                 PreventCameraFadeOut = true,
                 WaitForSceneTransitionCameraFade = false,
@@ -74,9 +87,25 @@ public class CombatDebugger : BaseUnityPlugin {
                 IsFirstLevelForPlayer = false,
             });
         }
+        if (Input.GetKeyDown(KeyCode.Keypad0)) {
+            ResetScene();
+            startOb = true;
+            isSceneLoaded = false;
+        }
+
+        if (startOb && !isSceneLoaded) {
+            var sceneLoad = HealthManagerUtils.GetSceneLoad(GameManager.instance);
+            if (sceneLoad == null) {
+                isSceneLoaded = true;
+            }
+        }
+
+        if (isSceneLoaded) {
+            // Loaded
+        }
     }
 
-    private void handleInput(int[] modelInputActions) {
+    private void HandleInput(int[] modelInputActions) {
         // TODO: change int[] to an int bitmask
         var hero = HeroController.instance;
         if (hero != null) {
@@ -105,8 +134,12 @@ public class CombatDebugger : BaseUnityPlugin {
                 sb.AppendLine($"HP: {heroHM.hp}/{HealthManagerUtils.GetInitHp(heroHM)}");
                 sb.AppendLine($"Dead: {heroHM.isDead}");
             }
+            // for now just set a fixed max position...
+            // float MAX_X = 50;
+            // float MAX_Y = 10;
             sb.AppendLine($"Position: {hero.transform.position}");
             sb.AppendLine($"Velocity: {hero.current_velocity}");
+            sb.AppendLine($"Dash Speed: {hero.DASH_SPEED}");
             var fields = typeof(HeroControllerStates).GetFields(BindingFlags.Public | BindingFlags.Instance);
             foreach (var field in fields) {
                 var value = field.GetValue(hero.cState);
