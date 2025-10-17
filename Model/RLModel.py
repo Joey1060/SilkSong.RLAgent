@@ -194,7 +194,7 @@ class DQNAgent:
         state_dim,
         num_valid_actions,
         dueling_net_cls,           # e.g. DuelingQNetwork
-        hidden_sizes=(256,256),
+        hidden_sizes=(32,64),
         lr=3e-4,
         gamma=0.99,
         tau=1.0,                   # hard update when tau=1.0; soft if <1

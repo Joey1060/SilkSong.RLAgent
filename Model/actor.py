@@ -2,7 +2,66 @@ import torch
 import os
 import json
 import uuid
+import socket
+import json
 from RLModel import DQNAgent, ReducedBinaryActionSpace, DuelingQNetwork
+
+class RLClient:
+    def __init__(self, host="127.0.0.1", port=8001):
+        self.host = host
+        self.port = port
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect((self.host, self.port))
+        self.buffer = b""
+
+    def send(self, obj: dict):
+        """Send a JSON object to the C# server."""
+        data = json.dumps(obj).encode("utf-8")
+        # Add newline as a delimiter (important!)
+        self.sock.sendall(data + b"\n")
+
+    def receive(self) -> dict:
+        """Receive a JSON object from the C# server."""
+        while b"\n" not in self.buffer:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                raise ConnectionError("Server closed connection")
+            self.buffer += chunk
+
+        line, self.buffer = self.buffer.split(b"\n", 1)
+        return json.loads(line.decode("utf-8"))
+
+    def close(self):
+        self.sock.close()
+
+class RLEnv:
+    def __init__(self, host="127.0.0.1", port=8001):
+        # create a socket client instance
+        self.client = RLClient(host, port)
+
+    def reset(self):
+        """Start a new episode and return the initial state."""
+        # send startOB command
+        self.client.send({"code": 1})
+        msg = self.client.receive()
+        # Expect: {"code":3, "transition":{...}}
+        state = msg["transition"]["CurState"]
+        return state
+
+    def step(self, action: int):
+        """Send an action and return (prev_state, prev_action, reward, next_state, done)."""
+        self.client.send({"code": 4, "action": action})
+        msg = self.client.receive()
+        t = msg["transition"]
+        next_state = t["CurState"]
+        reward = t["Reward"]
+        done = bool(t["Done"])
+        prev_state = t["PrevState"]
+        prev_action = t["Action"]
+        return prev_state, prev_action, reward, next_state, done
+
+    def close(self):
+        self.client.close()
 
 def find_latest_checkpoint(folder="weights", prefix="w"):
     """
@@ -57,6 +116,18 @@ space = ReducedBinaryActionSpace(n_bits=4, constraints=no_opposites)
 
 # Agent and buffer
 device = "cuda" if torch.cuda.is_available() else "cpu"
-state_dim = 128                    # example
+state_dim = 5                    # example
 num_valid_actions = len(space)
 agent = DQNAgent(state_dim, num_valid_actions, DuelingQNetwork, device=device)
+env = RLEnv()
+
+for i in range(2):
+    episode_data = []
+    next_state = env.reset()
+    done = False
+    while (not done):
+        action = agent.select_action(next_state, space)
+        prev_state, prev_action, reward, next_state, done = env.step(action)
+        episode_data.append([prev_state, prev_action, reward, next_state, done])
+    dump_episode(episode_data)
+env.close()

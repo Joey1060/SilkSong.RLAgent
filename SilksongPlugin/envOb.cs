@@ -189,7 +189,7 @@ public class RLController {
             }
             ++frameCount;
             if (done == 1) {
-                ResetScene();
+                isSceneLoaded = false;
             }
         }
     }
