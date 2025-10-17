@@ -198,17 +198,11 @@ class DQNAgent:
         lr=3e-4,
         gamma=0.99,
         tau=1.0,                   # hard update when tau=1.0; soft if <1
-        eps_start=1.0,
-        eps_end=0.05,
-        eps_decay_steps=100_000,
         device="cpu",
     ):
         self.device = device
         self.gamma = gamma
         self.tau = tau
-        self.eps_start = eps_start
-        self.eps_end = eps_end
-        self.eps_decay_steps = eps_decay_steps
 
         self.q_net = dueling_net_cls(state_dim, num_valid_actions, hidden_sizes).to(device)
         self.target_q_net = dueling_net_cls(state_dim, num_valid_actions, hidden_sizes).to(device)
@@ -220,27 +214,19 @@ class DQNAgent:
         self.num_actions = num_valid_actions
         self.total_steps = 0
 
-    def epsilon(self):
-        t = min(self.total_steps, self.eps_decay_steps)
-        frac = 1.0 - (t / self.eps_decay_steps)
-        return self.eps_end + (self.eps_start - self.eps_end) * frac
 
     @torch.no_grad()
-    def select_action(self, state, action_space, explore=True):
+    def select_action(self, state, action_space):
         """
         state: np.array or torch.Tensor of shape [state_dim]
         action_space: ReducedBinaryActionSpace (to convert index->bits)
         Returns: (index, bits)
         """
         self.total_steps += 1
-        eps = self.epsilon() if explore else 0.0
 
-        if random.random() < eps:
-            idx = int(torch.randint(0, self.num_actions, (1,)))
-        else:
-            s = torch.as_tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
-            q = self.q_net(s)                          # [1, num_actions]
-            idx = int(q.argmax(dim=1).item())
+        s = torch.as_tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
+        q = self.q_net(s)                          # [1, num_actions]
+        idx = int(q.argmax(dim=1).item())
 
         bits = action_space.index_to_action(idx)       # [n_bits]
         return idx, bits
@@ -292,20 +278,6 @@ class DQNAgent:
                     tp.data.mul_(1.0 - self.tau).add_(self.tau * p.data)
 
 
-    
-# Build the reduced action space
-def no_opposites(actions):
-    left, right, up, down = actions[:,0], actions[:,1], actions[:,2], actions[:,3]
-    return (left + right <= 1) & (up + down <= 1)
 
-space = ReducedBinaryActionSpace(n_bits=4, constraints=no_opposites)
-
-# Agent and buffer
-device = "cuda" if torch.cuda.is_available() else "cpu"
-state_dim = 128                    # example
-num_valid_actions = len(space)
-agent = DQNAgent(state_dim, num_valid_actions, DuelingQNetwork, device=device)
-
-buffer = PrioritizedReplayBuffer(capacity=100_000, state_dim=state_dim, device=device)
 
 
