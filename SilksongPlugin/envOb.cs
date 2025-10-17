@@ -5,6 +5,11 @@ using System.Reflection;
 using System.Collections.Generic;
 using BepInEx;
 using InControl;
+using System.Net;
+using System.Net.Sockets;
+using HutongGames.PlayMaker.Actions;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 public static class HealthManagerUtils {
     private static readonly FieldInfo initHpField =
@@ -22,6 +27,77 @@ public static class HealthManagerUtils {
             return -1; // fallback if something goes wrong
 
         return (int)initHpField.GetValue(hm);
+    }
+}
+
+public class RLTransition
+{
+    public float[] PrevState { get; set; }
+    public float Reward { get; set; }
+    public int Action { get; set; }
+    public float[] CurState { get; set; }
+    public int Done { get; set; }
+}
+
+
+public class RLCommand {
+    public RLTransition transition { get; set; }
+    public int action { get; set; }
+    /// <summary>
+    /// 1: startOB
+    /// 2: 
+    /// 3: send transition to agent
+    /// 4: receive action from agent
+    /// </summary>
+    public int code { get; set; }
+}
+
+public class RLTcpServer {
+    private Socket server;
+    private Socket client;
+
+    public RLTcpServer(int port) {
+        server = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        server.Bind(new IPEndPoint(IPAddress.Any, port));
+        server.Listen(1);
+        server.Blocking = false; // non-blocking
+        Debug.Log($"Server listening on port {port}...");
+    }
+
+    public RLCommand Receive() {
+        // If no client yet, poll for connection
+        if (client == null) {
+            if (server.Poll(0, SelectMode.SelectRead)) {
+                client = server.Accept();
+                client.Blocking = false;
+                Debug.Log("Client connected!");
+            }
+            return null;
+        }
+
+        // Already connected → check for incoming data
+        if (client.Available > 0) {
+            byte[] buffer = new byte[1024];
+            int bytesRead = client.Receive(buffer);
+            if (bytesRead > 0) {
+                var str = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                return JsonConvert.DeserializeObject<RLCommand>(str); ;
+            }
+        }
+
+        return null;
+    }
+
+    public void Respond(RLCommand msg) {
+        if (client != null && client.Connected) {
+            byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(msg));
+            client.Send(data);
+        }
+    }
+
+    public void Close() {
+        client?.Close();
+        server?.Close();
     }
 }
 
@@ -53,33 +129,39 @@ public static class InputUtil {
     }
 }
 
-[BepInPlugin("com.joey.combatDebugger", "Combat Debugger", "1.0.0")]
-public class CombatDebugger : BaseUnityPlugin {
-
-    private static new readonly BepInEx.Logging.ManualLogSource Logger =
-        BepInEx.Logging.Logger.CreateLogSource("CombatDebugger");
-
+public class RLController {
     private int frameCount = 0;
     private bool startOb = false;
     private bool isSceneLoaded = false;
-    private int prevAction = null;
+    private int prevAction = -1;
     private float[] prevState = null;
     private float[] curState = null;
-
-    void Awake() {
-        Logger.LogInfo("Loaded...");
+    private RLTcpServer server = null;
+    private int actionNum = 4;
+    public RLController() {
+        server = new RLTcpServer(8001);
     }
-    void Update() {
-        Time.timeScale = 2f;
-        if (Input.GetKeyDown(KeyCode.Z)) {
-            LogInfo();
-            // Logger.LogInfo()
+
+    public void Next() {
+        var msg = server.Receive();
+
+        if (msg != null) {
+            if (msg.code == 1) {
+                startOb = true;
+                ResetScene();
+            }
         }
-        // handleInput();
-        ListenForTrainingCommand();
+
+        if (startOb && !isSceneLoaded) {
+            var sceneLoad = HealthManagerUtils.GetSceneLoad(GameManager.instance);
+            if (sceneLoad == null) {
+                isSceneLoaded = true;
+            }
+        }
 
         if (startOb && isSceneLoaded) {
-            float reward, done;
+            float reward = 0;
+            int done = 0;
             // init frame as f0
             // The action will only get applied at the next frame, f1
             // suppose sample every k frames
@@ -98,29 +180,45 @@ public class CombatDebugger : BaseUnityPlugin {
                     // not sure here or in Python...
                     // LoadSample(prevState, reward, prevAction, curState, done);
                 }
-                SendStateToAgent(curState);
+                SendStateToAgent(reward, done);
                 prevState = curState;
             }
-            UpdateActionFromAgent();
-            if (prevAction != null) {
+            UpdateActionFromAgent(msg);
+            if (prevAction != -1) {
                 HandleAction(prevAction);
             }
             ++frameCount;
-            if (done) {
+            if (done == 1) {
                 ResetScene();
             }
         }
     }
 
-    private void SendStateToAgent(int[] curState) {
-
+    private void SendStateToAgent(float reward, int done) {
+        var msg = new RLCommand();
+        msg.code = 3;
+        msg.transition = new RLTransition {
+            PrevState = prevState,
+            Reward = reward,
+            Action = prevAction,
+            CurState = curState,
+            Done = done
+        };
+        server.Respond(msg);
     }
-    
-    private void UpdateActionFromAgent() {
-        
+
+    private void UpdateActionFromAgent(RLCommand msg) {
+        if (msg != null) {
+            if (msg.code == 4) {
+                prevAction = msg.action;
+            }
+        }
     }
 
-    private (float, float) GetReward() {
+    private (float, int) GetReward() {
+        if (frameCount > 3600) {
+            return (-1, 1);
+        }
         float GetDistanceReward(float curX) {
             return curX / 30;
         }
@@ -128,14 +226,14 @@ public class CombatDebugger : BaseUnityPlugin {
         if (prevState != null) {
             reward = GetDistanceReward(curState[1]) - GetDistanceReward(prevState[1]);
         }
-        float done = 0;
+        int done = 0;
         if (curState[1] >= 30) {
             done = 1;
             reward = 1;
         }
         return (reward, done);
     }
-    
+
     private void ResetScene() {
         GameManager.instance.BeginSceneTransition(new GameManager.SceneLoadInfo {
             PreventCameraFadeOut = true,
@@ -151,27 +249,8 @@ public class CombatDebugger : BaseUnityPlugin {
         prevState = null;
         curState = null;
     }
-
-    private void ListenForTrainingCommand() {
-        if (Input.GetKeyDown(KeyCode.Keypad0)) {
-            ResetScene();
-            startOb = true;
-            isSceneLoaded = false;
-        }
-
-        if (startOb && !isSceneLoaded) {
-            var sceneLoad = HealthManagerUtils.GetSceneLoad(GameManager.instance);
-            if (sceneLoad == null) {
-                isSceneLoaded = true;
-            }
-        }
-
-        if (isSceneLoaded) {
-            // Loaded
-        }
-    }
-
-    private void HandleAction(int[] modelInputActions) {
+    
+    private void HandleAction(int modelInputActions) {
         // TODO: change int[] to an int bitmask
         var hero = HeroController.instance;
         if (hero != null) {
@@ -180,10 +259,10 @@ public class CombatDebugger : BaseUnityPlugin {
             var heroInput = (InputHandler)field.GetValue(hero);
             var deltaTime = Time.deltaTime;
             ulong tick = InputManager.CurrentTick + 1;
-            for (int i = 0; i < modelInputActions.Length; ++i) {
-                int curActionCode = 1 << i;
-                bool curActionState = (modelInputActions[i] == 1);
-                InputUtil.GetAction(heroInput.inputActions, curActionCode, curActionState, tick, deltaTime);
+            for (int i = 0; i < actionNum; ++i) {
+                int curActionBit = 1 << i;
+                bool curActionState = ((modelInputActions & curActionBit) != 0);
+                InputUtil.GetAction(heroInput.inputActions, curActionBit, curActionState, tick, deltaTime);
             }
         }
     }
@@ -223,7 +302,7 @@ public class CombatDebugger : BaseUnityPlugin {
             // }
             // Logger.LogInfo(sb.ToString());
         }
-        return [hornetHP, hornetPosX, hornetPosY, hornetVelX, hornetVelY];
+        return new float[] { hornetHP, hornetPosX, hornetPosY, hornetVelX, hornetVelY };
         // --- Enemies ---
         // foreach (var hm in HealthManager.EnumerateActiveEnemies()) {
         //     if (hm == null) continue;
@@ -247,5 +326,30 @@ public class CombatDebugger : BaseUnityPlugin {
         //     }
         //     Logger.LogInfo(sb.ToString());
         // }
+    }
+}
+
+[BepInPlugin("com.joey.combatDebugger", "Combat Debugger", "1.0.0")]
+public class CombatDebugger : BaseUnityPlugin {
+
+    private static new readonly BepInEx.Logging.ManualLogSource Logger =
+        BepInEx.Logging.Logger.CreateLogSource("CombatDebugger");
+
+    private RLController rLController = null;
+
+    void Awake() {
+        Logger.LogInfo("Loaded...");
+        rLController = new RLController();
+    }
+    void Update() {
+        Time.timeScale = 2f;
+        if (Input.GetKeyDown(KeyCode.Z)) {
+            // LogInfo();
+            // Logger.LogInfo()
+        }
+        // handleInput();
+        // ListenForTrainingCommand();
+        rLController.Next();
+        
     }
 }
