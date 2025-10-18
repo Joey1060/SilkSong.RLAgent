@@ -43,14 +43,16 @@ class RLEnv:
         """Start a new episode and return the initial state."""
         # send startOB command
         self.client.send({"code": 1})
+        print('msg sent')
         msg = self.client.receive()
+        print('received', msg)
         # Expect: {"code":3, "transition":{...}}
         state = msg["transition"]["CurState"]
         return state
 
     def step(self, action: int):
         """Send an action and return (prev_state, prev_action, reward, next_state, done)."""
-        self.client.send({"code": 4, "action": action})
+        self.client.send({"code": 4, "action": int(action)})
         msg = self.client.receive()
         t = msg["transition"]
         next_state = t["CurState"]
@@ -124,10 +126,17 @@ env = RLEnv()
 for i in range(2):
     episode_data = []
     next_state = env.reset()
+    print(next_state)
     done = False
     while (not done):
-        action = agent.select_action(next_state, space)
-        prev_state, prev_action, reward, next_state, done = env.step(action)
+        print("?")
+        _, action = agent.select_action(next_state, space)
+        action_list = action.numpy()
+        action_mask = 0
+        for i in range(len(action_list)):
+            action_mask = action_mask | ((1 & action_list[i]) << i)
+        print(action_list, action_mask)
+        prev_state, prev_action, reward, next_state, done = env.step(action_mask)
         episode_data.append([prev_state, prev_action, reward, next_state, done])
     dump_episode(episode_data)
 env.close()

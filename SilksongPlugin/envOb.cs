@@ -12,6 +12,9 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 public static class HealthManagerUtils {
+    public static readonly BepInEx.Logging.ManualLogSource Logger =
+        BepInEx.Logging.Logger.CreateLogSource("CombatDebugger");
+
     private static readonly FieldInfo initHpField =
         typeof(HealthManager).GetField("initHp", BindingFlags.NonPublic | BindingFlags.Instance);
 
@@ -90,7 +93,9 @@ public class RLTcpServer {
 
     public void Respond(RLCommand msg) {
         if (client != null && client.Connected) {
-            byte[] data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(msg));
+            HealthManagerUtils.Logger.LogInfo("send msg to client");
+            string json = JsonConvert.SerializeObject(msg);
+            byte[] data = Encoding.UTF8.GetBytes(json + "\n");
             client.Send(data);
         }
     }
@@ -140,12 +145,18 @@ public class RLController {
     private int actionNum = 4;
     public RLController() {
         server = new RLTcpServer(8001);
+        // HealthManagerUtils.Logger.LogInfo("server running on ")
+    }
+
+    public void Close() {
+        server.Close();
     }
 
     public void Next() {
         var msg = server.Receive();
 
         if (msg != null) {
+            HealthManagerUtils.Logger.LogInfo(msg);
             if (msg.code == 1) {
                 startOb = true;
                 ResetScene();
@@ -154,12 +165,15 @@ public class RLController {
 
         if (startOb && !isSceneLoaded) {
             var sceneLoad = HealthManagerUtils.GetSceneLoad(GameManager.instance);
+            // HealthManagerUtils.Logger.LogInfo($"waiting for Scene...  {frameCount}");
+
             if (sceneLoad == null) {
                 isSceneLoaded = true;
             }
         }
 
         if (startOb && isSceneLoaded) {
+            // HealthManagerUtils.Logger.LogInfo($"Scene Loaded...   {frameCount}");
             float reward = 0;
             int done = 0;
             // init frame as f0
@@ -180,6 +194,7 @@ public class RLController {
                     // not sure here or in Python...
                     // LoadSample(prevState, reward, prevAction, curState, done);
                 }
+
                 SendStateToAgent(reward, done);
                 prevState = curState;
             }
@@ -332,17 +347,15 @@ public class RLController {
 [BepInPlugin("com.joey.combatDebugger", "Combat Debugger", "1.0.0")]
 public class CombatDebugger : BaseUnityPlugin {
 
-    private static new readonly BepInEx.Logging.ManualLogSource Logger =
-        BepInEx.Logging.Logger.CreateLogSource("CombatDebugger");
-
+    
     private RLController rLController = null;
 
     void Awake() {
-        Logger.LogInfo("Loaded...");
+        // Logger.LogInfo("Loaded...");
         rLController = new RLController();
     }
     void Update() {
-        Time.timeScale = 2f;
+        // Time.timeScale = 2f;
         if (Input.GetKeyDown(KeyCode.Z)) {
             // LogInfo();
             // Logger.LogInfo()
@@ -350,6 +363,9 @@ public class CombatDebugger : BaseUnityPlugin {
         // handleInput();
         // ListenForTrainingCommand();
         rLController.Next();
-        
+
+    }
+    void OnApplicationQuit() {
+        rLController.Close();
     }
 }
