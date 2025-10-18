@@ -103,6 +103,9 @@ public class RLTcpServer {
     public RLCommand Receive() {
         if (client != null && !IsConnected()) {
             CleanupClient();
+            return new RLCommand {
+                code = 2
+            };
         }
 
         // If no client yet, poll for connection
@@ -130,7 +133,7 @@ public class RLTcpServer {
 
     public void Respond(RLCommand msg) {
         if (client != null && client.Connected) {
-            HealthManagerUtils.Logger.LogInfo("send msg to client");
+            // HealthManagerUtils.Logger.LogInfo("send msg to client");
             string json = JsonConvert.SerializeObject(msg);
             byte[] data = Encoding.UTF8.GetBytes(json + "\n");
             client.Send(data);
@@ -202,9 +205,15 @@ public class RLController {
         var msg = server.Receive();
 
         if (msg != null) {
-            HealthManagerUtils.Logger.LogInfo(msg.action);
+            // HealthManagerUtils.Logger.LogInfo(msg.action);
             if (msg.code == 1) {
+                HealthManagerUtils.Logger.LogInfo("Start New Episode.");
                 startOb = true;
+                ResetScene();
+            }
+            else if (msg.code == 2) {
+                HealthManagerUtils.Logger.LogInfo("Client Disconnected.");
+                startOb = false;
                 ResetScene();
             }
         }
@@ -250,6 +259,7 @@ public class RLController {
             }
             ++frameCount;
             if (done == 1) {
+                HealthManagerUtils.Logger.LogInfo("Episode Finish.");
                 isSceneLoaded = false;
             }
         }
