@@ -178,6 +178,7 @@ public class RLController {
     private int frameCount = 0;
     private bool startOb = false;
     private bool isSceneLoaded = false;
+    private bool isTeleporting = false;
     private int prevAction = -1;
     private float[] prevState = null;
     private float[] curState = null;
@@ -193,12 +194,14 @@ public class RLController {
     }
 
     private async void TeleportHero() {
-        await Task.Delay(2000);
-        await Task.Run(() => {
-            var oldPos = HeroController.instance.transform.position;
-            HeroController.instance.transform.position = new Vector3(10, oldPos.y, oldPos.z);
-            isSceneLoaded = true;
-        });
+        isTeleporting = true;
+
+        await Task.Delay(1500);
+        var oldPos = HeroController.instance.transform.position;
+        HeroController.instance.transform.position = new Vector3(10, oldPos.y, oldPos.z);
+        // await Task.Delay(1000);
+        isSceneLoaded = true;
+        isTeleporting = false;
     }
 
     public void Next() {
@@ -218,7 +221,7 @@ public class RLController {
             }
         }
 
-        if (startOb && !isSceneLoaded) {
+        if (startOb && !isSceneLoaded && !isTeleporting) {
             var sceneLoad = HealthManagerUtils.GetSceneLoad(GameManager.instance);
             // HealthManagerUtils.Logger.LogInfo($"waiting for Scene...  {frameCount}");
 
