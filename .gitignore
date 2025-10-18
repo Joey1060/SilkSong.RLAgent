@@ -49,3 +49,5 @@ desktop.ini
 *.bak
 *.tmp
 *.old
+
+*.json

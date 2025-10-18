@@ -10,6 +10,7 @@ using System.Net.Sockets;
 using HutongGames.PlayMaker.Actions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.Threading.Tasks;
 
 public static class HealthManagerUtils {
     public static readonly BepInEx.Logging.ManualLogSource Logger =
@@ -33,8 +34,7 @@ public static class HealthManagerUtils {
     }
 }
 
-public class RLTransition
-{
+public class RLTransition {
     public float[] PrevState { get; set; }
     public float Reward { get; set; }
     public int Action { get; set; }
@@ -152,11 +152,20 @@ public class RLController {
         server.Close();
     }
 
+    private async void TeleportHero() {
+        await Task.Delay(2000);
+        await Task.Run(() => {
+            var oldPos = HeroController.instance.transform.position;
+            HeroController.instance.transform.position = new Vector3(5, oldPos.y, oldPos.z);
+            isSceneLoaded = true;
+        });
+    }
+
     public void Next() {
         var msg = server.Receive();
 
         if (msg != null) {
-            HealthManagerUtils.Logger.LogInfo(msg);
+            HealthManagerUtils.Logger.LogInfo(msg.action);
             if (msg.code == 1) {
                 startOb = true;
                 ResetScene();
@@ -168,7 +177,7 @@ public class RLController {
             // HealthManagerUtils.Logger.LogInfo($"waiting for Scene...  {frameCount}");
 
             if (sceneLoad == null) {
-                isSceneLoaded = true;
+                TeleportHero();
             }
         }
 
@@ -242,9 +251,13 @@ public class RLController {
             reward = GetDistanceReward(curState[1]) - GetDistanceReward(prevState[1]);
         }
         int done = 0;
-        if (curState[1] >= 30) {
+        if (curState[1] >= 0.6) {
             done = 1;
             reward = 1;
+        }
+        else if (curState[1] <= 0.01) {
+            done = 1;
+            reward = -1;
         }
         return (reward, done);
     }
@@ -264,7 +277,7 @@ public class RLController {
         prevState = null;
         curState = null;
     }
-    
+
     private void HandleAction(int modelInputActions) {
         // TODO: change int[] to an int bitmask
         var hero = HeroController.instance;
@@ -303,8 +316,8 @@ public class RLController {
             // for now just set a fixed max position...
             float MAX_X = 50;
             float MAX_Y = 10;
-            hornetPosX = hero.transform.position[0] / MAX_X;
-            hornetPosY = hero.transform.position[1] / MAX_Y;
+            hornetPosX = hero.transform.position.x / MAX_X;
+            hornetPosY = hero.transform.position.y / MAX_Y;
             hornetVelX = hero.current_velocity[0] / hero.DASH_SPEED;
             hornetVelY = hero.current_velocity[1] / hero.DASH_SPEED;
             // sb.AppendLine($"Position: {hero.transform.position}");
@@ -347,7 +360,7 @@ public class RLController {
 [BepInPlugin("com.joey.combatDebugger", "Combat Debugger", "1.0.0")]
 public class CombatDebugger : BaseUnityPlugin {
 
-    
+
     private RLController rLController = null;
 
     void Awake() {
