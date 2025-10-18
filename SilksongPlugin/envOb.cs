@@ -67,7 +67,44 @@ public class RLTcpServer {
         Debug.Log($"Server listening on port {port}...");
     }
 
+    private bool IsConnected() {
+        if (client == null) {
+            return false;
+        }
+        try {
+            if (client.Poll(0, SelectMode.SelectRead)) {
+                byte[] buffer = new byte[1];
+                if (client.Receive(buffer, SocketFlags.Peek) == 0) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        catch (SocketException e) {
+            Debug.LogWarning($"TCP connection error: {e.ErrorCode}|{e.Message}");
+            // Debug.LogWarning($"stack: {e.StackTrace}");
+            return false;
+        }
+    }
+
+    private void CleanupClient() {
+        if (client != null) {
+            try {
+                client.Close();
+            }
+            catch (Exception e) {
+                Debug.LogWarning($"TCP connection closing error: {e.Message}");
+            }
+            client = null;
+            Debug.Log("Client disconnected, waiting for new connection...");
+        }
+    }
+
     public RLCommand Receive() {
+        if (client != null && !IsConnected()) {
+            CleanupClient();
+        }
+
         // If no client yet, poll for connection
         if (client == null) {
             if (server.Poll(0, SelectMode.SelectRead)) {
@@ -101,7 +138,7 @@ public class RLTcpServer {
     }
 
     public void Close() {
-        client?.Close();
+        CleanupClient();
         server?.Close();
     }
 }
