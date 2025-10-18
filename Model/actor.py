@@ -67,35 +67,6 @@ class RLEnv:
     def close(self):
         self.client.close()
 
-def find_latest_checkpoint(folder="checkpoints", prefix="w"):
-    """
-    Scan the folder for files like w_0.pth, w_1.pth, ...
-    Return the path to the highest-index file, or None if none exist.
-    """
-    if not os.path.exists(folder):
-        return None
-
-    existing = [f for f in os.listdir(folder) if f.startswith(prefix) and f.endswith(".pth")]
-    if not existing:
-        return None
-
-    # Extract numeric suffixes
-    indices = [(int(f[len(prefix)+1:-4]), f) for f in existing if f[len(prefix)+1:-4].isdigit()]
-    if not indices:
-        return None
-
-    latest_idx, latest_file = max(indices, key=lambda x: x[0])
-    return os.path.join(folder, latest_file)
-
-def load_checkpoint(model, path, device="cpu"):
-    """
-    Load weights from a given checkpoint path into the model.
-    """
-    state_dict = torch.load(path, map_location=device)
-    model.load_state_dict(state_dict)
-    print(f"Loaded checkpoint: {path}")
-    return model
-
 class EpisodeDumper:
     def __init__(self, folder="episodes"):
         self.folder = folder
@@ -139,13 +110,13 @@ dumper = EpisodeDumper()
 
 
 while (True):
-    latest_checkpoint = find_latest_checkpoint()
+    latest_checkpoint = agent.find_latest_checkpoint()
     # if (latest_checkpoint is None):
     #     time.sleep(5)
     #     continue
     if (latest_checkpoint != cur_checkpoint):
-        print("new checkpoint found, loading....")
-        load_checkpoint(agent, latest_checkpoint)
+        print(f"new checkpoint found: {latest_checkpoint}, loading....")
+        agent.load_checkpoint(latest_checkpoint)
         cur_checkpoint = latest_checkpoint
 
     episode_data = []

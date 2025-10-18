@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -253,6 +254,53 @@ class DQNAgent:
         bits = action_space.index_to_action(idx)       # [n_bits]
         return idx, bits
     
+    def find_latest_checkpoint(self, folder="checkpoints", prefix="w"):
+        """
+        Scan the folder for files like w_0.pth, w_1.pth, ...
+        Return the path to the highest-index file, or None if none exist.
+        """
+        if not os.path.exists(folder):
+            return None
+
+        existing = [f for f in os.listdir(folder) if f.startswith(prefix) and f.endswith(".pth")]
+        if not existing:
+            return None
+
+        # Extract numeric suffixes
+        indices = [(int(f[len(prefix)+1:-4]), f) for f in existing if f[len(prefix)+1:-4].isdigit()]
+        if not indices:
+            return None
+
+        latest_idx, latest_file = max(indices, key=lambda x: x[0])
+        return os.path.join(folder, latest_file)
+
+    def load_checkpoint(self, path, device="cpu"):
+        """
+        Load weights from a given checkpoint path into the model.
+        """
+        state_dict = torch.load(path, map_location=device)
+        self.load_state_dict(state_dict)
+        print(f"Loaded checkpoint: {path}")
+
+    def save_checkpoint(self, folder="checkpoints", prefix="w"):
+        os.makedirs(folder, exist_ok=True)
+
+        # Find existing files
+        existing = [f for f in os.listdir(folder) if f.startswith(prefix) and f.endswith(".pth")]
+        if existing:
+            # Extract numeric suffixes
+            indices = [int(f[len(prefix)+1:-4]) for f in existing if f[len(prefix)+1:-4].isdigit()]
+            next_idx = max(indices) + 1 if indices else 0
+        else:
+            next_idx = 0
+
+        filename = f"{prefix}_{next_idx}.pth"
+        path = os.path.join(folder, filename)
+
+        torch.save(self.state_dict(), path)
+        print(f"Saved: {path}")
+        return path
+    
     def reset_noise(self):
         self.q_net.reset_noise()
         self.target_q_net.reset_noise()
@@ -291,6 +339,10 @@ class DQNAgent:
 
         # Update priorities in buffer
         buffer.update_priorities(idxs, td_errors)
+
+        if (self.total_steps % 20 == 0):
+            print("update target net")
+            self.update_target()
 
         return loss.item()
 

@@ -5,25 +5,6 @@ import json
 from RLModel import DQNAgent, ReducedBinaryActionSpace, DuelingQNetwork, PrioritizedReplayBuffer
 
 
-def save_checkpoint(model, folder="checkpoints", prefix="w"):
-    os.makedirs(folder, exist_ok=True)
-
-    # Find existing files
-    existing = [f for f in os.listdir(folder) if f.startswith(prefix) and f.endswith(".pth")]
-    if existing:
-        # Extract numeric suffixes
-        indices = [int(f[len(prefix)+1:-4]) for f in existing if f[len(prefix)+1:-4].isdigit()]
-        next_idx = max(indices) + 1 if indices else 0
-    else:
-        next_idx = 0
-
-    filename = f"{prefix}_{next_idx}.pth"
-    path = os.path.join(folder, filename)
-
-    torch.save(model.state_dict(), path)
-    print(f"Saved: {path}")
-    return path
-
 def consume_episodes_once(folder="episodes", seen=None):
     """
     Scan the folder once for new .json episodes.
@@ -94,12 +75,17 @@ num_valid_actions = len(space)
 agent = DQNAgent(state_dim, num_valid_actions, DuelingQNetwork, device=device)
 buffer = PrioritizedReplayBuffer(capacity=100_000, state_dim=state_dim, device=device)
 
+recent_checkpoint_pth = agent.find_latest_checkpoint()
+if (recent_checkpoint_pth is not None):
+    print("checkpoint found, loading...")
+    agent.load_checkpoint(recent_checkpoint_pth)
+
 num_epochs = 10
-check_interval = 2
+check_interval = 10
 seen = set()
 epoch = 0
 buffer_size = 0
-checkpoint_save_interval = 2
+checkpoint_save_interval = 4
 expected_new_sample_num = 300
 
 while (True):
@@ -118,12 +104,12 @@ while (True):
         else:
             buffer_size = buffer.total
 
-    losses = train_from_buffer(agent, buffer, batch_size=64, train_steps=10)
+    losses = train_from_buffer(agent, buffer, batch_size=128, train_steps=10)
     epoch += 1
 
     if (epoch % checkpoint_save_interval == 0):
-        save_checkpoint(agent)
+        agent.save_checkpoint()
 
-    if (epoch > 100):
+    if (epoch > 200):
         break
         
