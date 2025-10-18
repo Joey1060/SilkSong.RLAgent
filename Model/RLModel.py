@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import random
-from torchrl.modules import NoisyLinear
+from torchrl.modules import NoisyLinear, reset_noise
 
 import numpy as np
 
@@ -121,18 +121,21 @@ class DuelingQNetwork(nn.Module):
             last = h
         self.body = nn.Sequential(*layers)
 
+        self.value_noisy = NoisyLinear(last, 1)
+        self.action_noisy = NoisyLinear(last, action_dim)
+
         # Value stream: outputs scalar V(s)
         self.value = nn.Sequential(
             nn.Linear(last, last),
             nn.ReLU(),
-            NoisyLinear(last, 1)
+            self.value_noisy
         )
 
         # Advantage stream: outputs vector A(s,·)
         self.advantage = nn.Sequential(
             nn.Linear(last, last),
             nn.ReLU(),
-            NoisyLinear(last, action_dim)
+            self.action_noisy
         )
 
     def forward(self, state):
@@ -143,6 +146,10 @@ class DuelingQNetwork(nn.Module):
         a_mean = a.mean(dim=1, keepdim=True)   # [B, 1]
         q = v + (a - a_mean)                   # [B, action_dim]
         return q
+    
+    def reset_noise(self):
+        reset_noise(self.value_noisy)
+        reset_noise(self.action_noisy)
 
 class ReducedBinaryActionSpace:
     def __init__(self, n_bits, constraints=None):
@@ -230,6 +237,10 @@ class DQNAgent:
 
         bits = action_space.index_to_action(idx)       # [n_bits]
         return idx, bits
+    
+    def reset_noise(self):
+        self.q_net.reset_noise()
+        self.target_q_net.reset_noise()
 
     def update(self, buffer, batch_size):
         # Sample from PER buffer

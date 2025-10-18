@@ -130,6 +130,7 @@ for i in range(2):
     done = False
     while (not done):
         print("?")
+        agent.reset_noise()
         _, action = agent.select_action(next_state, space)
         action_list = action.numpy()
         action_mask = 0
