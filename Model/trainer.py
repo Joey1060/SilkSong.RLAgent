@@ -1,4 +1,5 @@
 import os
+import time
 import torch
 import json
 from RLModel import DQNAgent, ReducedBinaryActionSpace, DuelingQNetwork, PrioritizedReplayBuffer
@@ -54,7 +55,7 @@ def train_from_buffer(
     buffer,
     batch_size=64,
     train_steps=10,
-    target_update_interval=1000,
+    target_update_interval=20,
 ):
     """
     Run a block of training updates using samples from the replay buffer.
@@ -68,7 +69,7 @@ def train_from_buffer(
     """
     losses = []
     for step in range(train_steps):
-        if len(buffer) < batch_size:
+        if buffer.total < batch_size:
             break  # not enough data yet
 
         loss = agent.update(buffer, batch_size)
@@ -88,15 +89,41 @@ space = ReducedBinaryActionSpace(n_bits=4, constraints=no_opposites)
 
 # Agent and buffer
 device = "cuda" if torch.cuda.is_available() else "cpu"
-state_dim = 128                    # example
+state_dim = 5                    # example
 num_valid_actions = len(space)
 agent = DQNAgent(state_dim, num_valid_actions, DuelingQNetwork, device=device)
 buffer = PrioritizedReplayBuffer(capacity=100_000, state_dim=state_dim, device=device)
 
 num_epochs = 10
+check_interval = 2
+seen = set()
+epoch = 0
+buffer_size = 0
+checkpoint_save_interval = 2
+expected_new_sample_num = 300
 
-for epoch in range(num_epochs):
-    losses = train_from_buffer(agent, buffer, batch_size=64, train_steps=50)
+while (True):
+    if epoch % check_interval == 0:
+        new_eps, seen = consume_episodes_once("episodes", seen)
+        if new_eps:
+            # Add to replay buffer
+            for ep in new_eps:
+                for s in ep:
+                    buffer.push(*s)
+            print(f"Loaded {len(new_eps)} new episodes")
+        if (buffer.total - buffer_size < expected_new_sample_num):
+            print("Not enough episodes, pausing training...")
+            time.sleep(5)
+            continue
+        else:
+            buffer_size = buffer.total
 
-    if losses:
-        print(f"Epoch {epoch}: mean loss {sum(losses)/len(losses):.4f}")
+    losses = train_from_buffer(agent, buffer, batch_size=64, train_steps=10)
+    epoch += 1
+
+    if (epoch % checkpoint_save_interval == 0):
+        save_checkpoint(agent)
+
+    if (epoch > 100):
+        break
+        

@@ -193,7 +193,7 @@ public class RLController {
         await Task.Delay(2000);
         await Task.Run(() => {
             var oldPos = HeroController.instance.transform.position;
-            HeroController.instance.transform.position = new Vector3(5, oldPos.y, oldPos.z);
+            HeroController.instance.transform.position = new Vector3(10, oldPos.y, oldPos.z);
             isSceneLoaded = true;
         });
     }
@@ -277,7 +277,7 @@ public class RLController {
     }
 
     private (float, int) GetReward() {
-        if (frameCount > 3600) {
+        if (frameCount > 300) {
             return (-1, 1);
         }
         float GetDistanceReward(float curX) {
@@ -292,7 +292,7 @@ public class RLController {
             done = 1;
             reward = 1;
         }
-        else if (curState[1] <= 0.01) {
+        else if (curState[1] <= 0.1) {
             done = 1;
             reward = -1;
         }

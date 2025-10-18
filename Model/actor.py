@@ -1,7 +1,9 @@
+import time
 import torch
 import os
 import json
 import uuid
+import re
 import socket
 import json
 from RLModel import DQNAgent, ReducedBinaryActionSpace, DuelingQNetwork
@@ -65,7 +67,7 @@ class RLEnv:
     def close(self):
         self.client.close()
 
-def find_latest_checkpoint(folder="weights", prefix="w"):
+def find_latest_checkpoint(folder="checkpoints", prefix="w"):
     """
     Scan the folder for files like w_0.pth, w_1.pth, ...
     Return the path to the highest-index file, or None if none exist.
@@ -94,21 +96,30 @@ def load_checkpoint(model, path, device="cpu"):
     print(f"Loaded checkpoint: {path}")
     return model
 
-def dump_episode(episode_data, folder="episodes"):
-    os.makedirs(folder, exist_ok=True)
-    tmp_name = os.path.join(folder, f"{uuid.uuid4()}.tmp")
-    final_name = tmp_name.replace(".tmp", ".json")
-
-    # Write to temp file
-    with open(tmp_name, "w") as f:
-        json.dump(episode_data, f)
-
-    # Atomic rename → trainer only sees .json when fully written
-    os.rename(tmp_name, final_name)
-    print(f"Episode saved: {final_name}")
-
-# with torch.no_grad():
+class EpisodeDumper:
+    def __init__(self, folder="episodes"):
+        self.folder = folder
+        self.counter = self.init_episode_counter(folder)
     
+    def init_episode_counter(self, folder="episodes"):
+        os.makedirs(folder, exist_ok=True)
+        existing = [
+            int(re.match(r"(\d+)\.json", f).group(1))
+            for f in os.listdir(folder)
+            if re.match(r"^\d+\.json$", f)
+        ]
+        return max(existing, default=0)
+
+    def dump(self, episode_data):
+        self.counter += 1
+        final_name = os.path.join(self.folder, f"{self.counter}.json")
+        tmp_name = final_name + ".tmp"
+
+        with open(tmp_name, "w") as f:
+            json.dump(episode_data, f)
+
+        os.replace(tmp_name, final_name)
+        print(f"Episode saved: {final_name}")
 
 def no_opposites(actions):
     left, right, up, down = actions[:,0], actions[:,1], actions[:,2], actions[:,3]
@@ -122,22 +133,36 @@ state_dim = 5                    # example
 num_valid_actions = len(space)
 agent = DQNAgent(state_dim, num_valid_actions, DuelingQNetwork, device=device)
 env = RLEnv()
+cur_checkpoint = None
 
-for i in range(2):
+dumper = EpisodeDumper()
+
+
+while (True):
+    latest_checkpoint = find_latest_checkpoint()
+    # if (latest_checkpoint is None):
+    #     time.sleep(5)
+    #     continue
+    if (latest_checkpoint != cur_checkpoint):
+        print("new checkpoint found, loading....")
+        load_checkpoint(agent, latest_checkpoint)
+        cur_checkpoint = latest_checkpoint
+
     episode_data = []
     next_state = env.reset()
     print(next_state)
     done = False
     while (not done):
-        print("?")
+        # print("?")
         agent.reset_noise()
         _, action = agent.select_action(next_state, space)
         action_list = action.numpy()
         action_mask = 0
         for i in range(len(action_list)):
             action_mask = action_mask | ((1 & action_list[i]) << i)
-        print(action_list, action_mask)
+        # print(action_list, action_mask)
         prev_state, prev_action, reward, next_state, done = env.step(action_mask)
-        episode_data.append([prev_state, prev_action, reward, next_state, done])
-    dump_episode(episode_data)
+        episode_data.append([prev_state, space.action_to_index(action), reward, next_state, done])
+    print("done, dumping episode data....")
+    dumper.dump(episode_data)
 env.close()

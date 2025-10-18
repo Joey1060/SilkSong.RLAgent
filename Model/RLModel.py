@@ -107,6 +107,10 @@ class PrioritizedReplayBuffer:
         for idx, err in zip(idxs, td_errors.detach().cpu().numpy()):
             p = (abs(err) + self.eps) ** self.alpha
             self.tree.update(idx, p)
+        
+    @property
+    def total(self):
+        return self.tree.total
 
 
 class DuelingQNetwork(nn.Module):
@@ -221,6 +225,19 @@ class DQNAgent:
         self.num_actions = num_valid_actions
         self.total_steps = 0
 
+    def state_dict(self):
+        return {
+            "q_net": self.q_net.state_dict(),
+            "target_q_net": self.target_q_net.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+            "total_steps": self.total_steps,
+        }
+
+    def load_state_dict(self, state):
+        self.q_net.load_state_dict(state["q_net"])
+        self.target_q_net.load_state_dict(state["target_q_net"])
+        self.optimizer.load_state_dict(state["optimizer"])
+        self.total_steps = state.get("total_steps", 0)
 
     @torch.no_grad()
     def select_action(self, state, action_space):
@@ -229,8 +246,6 @@ class DQNAgent:
         action_space: ReducedBinaryActionSpace (to convert index->bits)
         Returns: (index, bits)
         """
-        self.total_steps += 1
-
         s = torch.as_tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
         q = self.q_net(s)                          # [1, num_actions]
         idx = int(q.argmax(dim=1).item())
@@ -245,6 +260,7 @@ class DQNAgent:
     def update(self, buffer, batch_size):
         # Sample from PER buffer
         states, actions, rewards, next_states, dones, weights, idxs = buffer.sample(batch_size)
+        self.total_steps += 1
 
         # Compute Q(s,a)
         q = self.q_net(states)                          # [B, A]
