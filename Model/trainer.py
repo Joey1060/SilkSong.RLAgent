@@ -50,7 +50,7 @@ def train_from_buffer(
     """
     losses = []
     for step in range(train_steps):
-        if buffer.total < batch_size:
+        if buffer.size < batch_size:
             break  # not enough data yet
 
         loss = agent.update(buffer, batch_size)
@@ -97,12 +97,13 @@ while (True):
                 for s in ep:
                     buffer.push(*s)
             print(f"Loaded {len(new_eps)} new episodes")
-        if (buffer.total - buffer_size < expected_new_sample_num):
+            print(f"new buffer size: {buffer.size}, prev buffer size: {buffer_size}")
+        if (buffer.size - buffer_size < expected_new_sample_num):
             print("Not enough episodes, pausing training...")
             time.sleep(5)
             continue
         else:
-            buffer_size = buffer.total
+            buffer_size = buffer.size
 
     losses = train_from_buffer(agent, buffer, batch_size=128, train_steps=10)
     epoch += 1

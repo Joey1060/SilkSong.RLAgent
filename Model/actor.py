@@ -45,9 +45,7 @@ class RLEnv:
         """Start a new episode and return the initial state."""
         # send startOB command
         self.client.send({"code": 1})
-        print('msg sent')
         msg = self.client.receive()
-        print('received', msg)
         # Expect: {"code":3, "transition":{...}}
         state = msg["transition"]["CurState"]
         return state
@@ -121,7 +119,6 @@ while (True):
 
     episode_data = []
     next_state = env.reset()
-    print(next_state)
     done = False
     while (not done):
         # print("?")
@@ -134,6 +131,6 @@ while (True):
         # print(action_list, action_mask)
         prev_state, prev_action, reward, next_state, done = env.step(action_mask)
         episode_data.append([prev_state, space.action_to_index(action), reward, next_state, done])
-    print("done, dumping episode data....")
+    print(f"episode finished, dumping data....")
     dumper.dump(episode_data)
 env.close()

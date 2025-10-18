@@ -110,8 +110,8 @@ class PrioritizedReplayBuffer:
             self.tree.update(idx, p)
         
     @property
-    def total(self):
-        return self.tree.total
+    def size(self):
+        return self.tree.size
 
 
 class DuelingQNetwork(nn.Module):
