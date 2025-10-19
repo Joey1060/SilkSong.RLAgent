@@ -84,6 +84,8 @@ class PrioritizedReplayBuffer:
         for i in range(batch_size):
             s = np.random.uniform(segment * i, segment * (i + 1))
             idx, p, data = self.tree.get(s)
+            while (not isinstance(data, tuple)):
+                idx, p, data = self.tree.get(s)
             batch.append(data)
             idxs.append(idx)
             priorities.append(p)
@@ -207,7 +209,7 @@ class DQNAgent:
         num_valid_actions,
         dueling_net_cls,           # e.g. DuelingQNetwork
         hidden_sizes=(32,64),
-        lr=3e-4,
+        lr=0.001,
         gamma=0.99,
         tau=1.0,                   # hard update when tau=1.0; soft if <1
         device="cpu",
