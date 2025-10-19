@@ -80,11 +80,12 @@ class PrioritizedReplayBuffer:
         priorities = []
 
         self.beta = min(1.0, self.beta + self.beta_increment)
-
+        eps = 1e-7
         for i in range(batch_size):
-            s = np.random.uniform(segment * i, segment * (i + 1))
+            s = np.random.uniform(segment * i + eps, segment * (i + 1))
             idx, p, data = self.tree.get(s)
             while (not isinstance(data, tuple)):
+                s = np.random.uniform(segment * i + eps, segment * (i + 1))
                 idx, p, data = self.tree.get(s)
             batch.append(data)
             idxs.append(idx)
