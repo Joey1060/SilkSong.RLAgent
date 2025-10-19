@@ -41,11 +41,12 @@ class RLEnv:
     def __init__(self, host="127.0.0.1", port=8001):
         # create a socket client instance
         self.client = RLClient(host, port)
+        self.manual_mode = False
 
     def reset(self):
         """Start a new episode and return the initial state."""
         # send startOB command
-        self.client.send({"code": 1})
+        self.client.send({"code": 5 if self.manual_mode else 1})
         msg = self.client.receive()
         # Expect: {"code":3, "transition":{...}}
         state = msg["transition"]["CurState"]
@@ -53,7 +54,8 @@ class RLEnv:
 
     def step(self, action: int):
         """Send an action and return (prev_state, prev_action, reward, next_state, done)."""
-        self.client.send({"code": 4, "action": int(action)})
+        if (not self.manual_mode):
+            self.client.send({"code": 4, "action": int(action)})
         msg = self.client.receive()
         t = msg["transition"]
         next_state = t["CurState"]
@@ -91,53 +93,55 @@ class EpisodeDumper:
         os.replace(tmp_name, final_name)
         print(f"Episode saved: {final_name}")
 
-def no_opposites(actions):
-    left, right, up, down = actions[:,0], actions[:,1], actions[:,2], actions[:,3]
-    return (left + right <= 1) & (up + down <= 1)
+no_opposites = [[0,1], [2,3]]
 
-
+env = RLEnv()
 training_mode = True
+manual_mode = False
 if (len(sys.argv) == 2):
     if (sys.argv[1] == '--eval'):
         training_mode = False
+    elif (sys.argv[1] == '--manual'):
+        print("manual mode, please be prepared")
+        manual_mode = True
+        env.manual_mode = True
 
-space = ReducedBinaryActionSpace(n_bits=4, constraints=no_opposites)
+space = ReducedBinaryActionSpace(n_bits=5, constraints=no_opposites)
 
 # Agent and buffer
 device = "cuda" if torch.cuda.is_available() else "cpu"
 state_dim = 5                    # example
 num_valid_actions = len(space)
 agent = DQNAgent(state_dim, num_valid_actions, DuelingQNetwork, device=device)
-env = RLEnv()
 cur_checkpoint = None
 
 dumper = EpisodeDumper()
 
 if training_mode:
     while (True):
-        latest_checkpoint = agent.find_latest_checkpoint()
-        # if (latest_checkpoint is None):
-        #     time.sleep(5)
-        #     continue
-        if (latest_checkpoint != cur_checkpoint):
-            print(f"new checkpoint found: {latest_checkpoint}, loading....")
-            agent.load_checkpoint(latest_checkpoint)
-            cur_checkpoint = latest_checkpoint
+        if (not manual_mode):
+            latest_checkpoint = agent.find_latest_checkpoint()
+            if (latest_checkpoint != cur_checkpoint):
+                print(f"new checkpoint found: {latest_checkpoint}, loading....")
+                agent.load_checkpoint(latest_checkpoint)
+                cur_checkpoint = latest_checkpoint
 
         episode_data = []
         next_state = env.reset()
         done = False
         while (not done):
             # print("?")
-            agent.reset_noise()
-            _, action = agent.select_action(next_state, space)
-            action_list = action.numpy()
             action_mask = 0
-            for i in range(len(action_list)):
-                action_mask = action_mask | ((1 & action_list[i]) << i)
+            if (not manual_mode):
+                agent.reset_noise()
+                _, action = agent.select_action(next_state, space)
+                action_list = action.numpy()
+                for i in range(len(action_list)):
+                    action_mask = action_mask | ((1 & action_list[i]) << i)
             # print(action_list, action_mask)
             prev_state, prev_action, reward, next_state, done = env.step(action_mask)
-            episode_data.append([prev_state, space.action_to_index(action), reward, next_state, done])
+            # print(prev_action)
+            episode_data.append([prev_state, space.bitmask_to_index(prev_action), reward, next_state, done])
         print(f"episode finished, dumping data....")
         dumper.dump(episode_data)
 else:

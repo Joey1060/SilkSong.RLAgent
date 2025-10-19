@@ -161,9 +161,11 @@ class DuelingQNetwork(nn.Module):
 
 class ReducedBinaryActionSpace:
     def __init__(self, n_bits, constraints=None):
+        self.constraints = constraints
         all_actions = ((torch.arange(2**n_bits)[:, None] >> torch.arange(n_bits)) & 1).int()
         if constraints is not None:
-            mask = constraints(all_actions)
+            mask = self.reduce_space(all_actions, constraints)
+            print(mask)
             self.valid_actions = all_actions[mask]
         else:
             self.valid_actions = all_actions
@@ -175,6 +177,33 @@ class ReducedBinaryActionSpace:
         keys = (self.valid_actions * self.powers).sum(dim=1).tolist()
         self.int_to_idx = {k: i for i, k in enumerate(keys)}
         self.idx_to_action = self.valid_actions  # keep as tensor
+
+    def reduce_space(self, actions, constraints):
+        mask = (actions[:,constraints[0][0]] + actions[:, constraints[0][1]] <= 1)
+        for i in range(1, len(constraints)):
+            mask = mask & (actions[:,constraints[i][0]] + actions[:, constraints[i][1]] <= 1)
+        return mask
+    
+    def bitmask_to_index(self, bitmask: int):
+        """
+        Convert an integer bitmask into a reduced index.
+        If the bitmask violates constraints (e.g. both keys in a forbidden pair are set),
+        we drop one of them deterministically.
+        """
+        # Decode int -> bit vector [n_bits]
+        bits = ((torch.arange(self.n_bits) & bitmask) > 0).int()
+
+        # Enforce constraints: if both bits in a forbidden pair are 1, drop the second
+        if self.constraints is not None:
+            for (i, j) in self.constraints:
+                if bits[i] == 1 and bits[j] == 1:
+                    bits[j] = 0  # policy: always drop the second
+
+        # Re‑encode to int key
+        key = int((bits * self.powers).sum().item())
+
+        # Look up reduced index
+        return self.int_to_idx[key]
 
     def sample(self, batch_size=1):
         return torch.randint(0, self.n, (batch_size,))
