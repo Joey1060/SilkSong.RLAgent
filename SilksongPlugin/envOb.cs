@@ -293,12 +293,9 @@ public class RLController {
         if (frameCount > 300) {
             return (-1, 1);
         }
-        float GetDistanceReward(float curX) {
-            return curX / 30;
-        }
         float reward = 0;
         if (prevState != null) {
-            reward = GetDistanceReward(curState[1]) - GetDistanceReward(prevState[1]);
+            reward = (curState[1] > prevState[1]) ? 0.1f : -0.12f;
         }
         int done = 0;
         if (curState[1] >= 0.6) {
@@ -418,7 +415,7 @@ public class CombatDebugger : BaseUnityPlugin {
         rLController = new RLController();
     }
     void Update() {
-        // Time.timeScale = 2f;
+        Time.timeScale = 2f;
         if (Input.GetKeyDown(KeyCode.Z)) {
             // LogInfo();
             // Logger.LogInfo()
