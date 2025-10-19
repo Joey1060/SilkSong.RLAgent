@@ -51,6 +51,7 @@ public class RLCommand {
     /// 2: 
     /// 3: send transition to agent
     /// 4: receive action from agent
+    /// 5: switch to manual control
     /// </summary>
     public int code { get; set; }
 }
@@ -150,7 +151,8 @@ public enum ModelInputAction {
     Up = 1,
     Down = 2,
     Left = 4,
-    Right = 8
+    Right = 8,
+    Jump = 16
 }
 
 public delegate void InputActionInvoker(HeroActions ia, bool state, ulong tick, float deltaTime);
@@ -162,8 +164,28 @@ public static class InputUtil {
             { ModelInputAction.Up,    (ia, state, tick, deltaTime) => ia.Up.CommitWithState(state, tick, deltaTime) },
             { ModelInputAction.Down,  (ia, state, tick, deltaTime) => ia.Down.CommitWithState(state, tick, deltaTime) },
             { ModelInputAction.Left,  (ia, state, tick, deltaTime) => ia.Left.CommitWithState(state, tick, deltaTime) },
-            { ModelInputAction.Right, (ia, state, tick, deltaTime) => ia.Right.CommitWithState(state, tick, deltaTime) }
+            { ModelInputAction.Right, (ia, state, tick, deltaTime) => ia.Right.CommitWithState(state, tick, deltaTime) },
+            { ModelInputAction.Jump,  (ia, state, tick, deltaTime) => ia.Jump.CommitWithState(state, tick, deltaTime) }
         };
+
+    private static Dictionary<KeyCode, int> keyMap =
+        new Dictionary<KeyCode, int> {
+            { KeyCode.W,        (int)ModelInputAction.Up },
+            { KeyCode.S,        (int)ModelInputAction.Down },
+            { KeyCode.A,        (int)ModelInputAction.Left },
+            { KeyCode.D,        (int)ModelInputAction.Right },
+            { KeyCode.K,        (int)ModelInputAction.Jump }
+        };
+
+    public static int GetInputMask() {
+        int mask = 0;
+        foreach (var kvp in keyMap) {
+            if (Input.GetKeyDown(kvp.Key)) {
+                mask |= kvp.Value;
+            }
+        }
+        return mask;
+    }
 
     public static void GetAction(HeroActions heroInput, int actCode, bool state, ulong tick, float deltaTime) {
         if (!Enum.IsDefined(typeof(ModelInputAction), actCode))
@@ -177,13 +199,18 @@ public static class InputUtil {
 public class RLController {
     private int frameCount = 0;
     private bool startOb = false;
+    private bool startManual = false;
     private bool isSceneLoaded = false;
+    private float timeScale = 2f;
     private bool isTeleporting = false;
     private int prevAction = -1;
     private float[] prevState = null;
     private float[] curState = null;
     private RLTcpServer server = null;
-    private int actionNum = 4;
+    private int actionNum = 5;
+
+    public float TimeScale { get { return timeScale; } }
+
     public RLController() {
         server = new RLTcpServer(8001);
         // HealthManagerUtils.Logger.LogInfo("server running on ")
@@ -212,11 +239,20 @@ public class RLController {
             if (msg.code == 1) {
                 HealthManagerUtils.Logger.LogInfo("Start New Episode.");
                 startOb = true;
+                startManual = false;
+                timeScale = 2f;
                 ResetScene();
             }
             else if (msg.code == 2) {
                 HealthManagerUtils.Logger.LogInfo("Client Disconnected.");
                 startOb = false;
+                ResetScene();
+            }
+            else if (msg.code == 5) {
+                HealthManagerUtils.Logger.LogInfo("Switch to Manual Input.");
+                startOb = true;
+                startManual = true;
+                timeScale = 1f;
                 ResetScene();
             }
         }
@@ -256,13 +292,19 @@ public class RLController {
                 SendStateToAgent(reward, done);
                 prevState = curState;
             }
-            UpdateActionFromAgent(msg);
-            if (prevAction != -1) {
-                HandleAction(prevAction);
+            if (startManual) {
+                prevAction = InputUtil.GetInputMask();
             }
+            else {
+                UpdateActionFromAgent(msg);
+                if (prevAction != -1) {
+                    HandleAction(prevAction);
+                }
+            }
+            
             ++frameCount;
             if (done == 1) {
-                HealthManagerUtils.Logger.LogInfo("Episode Finish.");
+                HealthManagerUtils.Logger.LogInfo($"Episode Finish with reward={reward}");
                 isSceneLoaded = false;
             }
         }
@@ -298,13 +340,17 @@ public class RLController {
             reward = (curState[1] > prevState[1]) ? 0.1f : -0.12f;
         }
         int done = 0;
-        if (curState[1] >= 0.6) {
+        if (curState[1] >= 1) {
             done = 1;
-            reward = 1;
+            reward = -2;
         }
         else if (curState[1] <= 0.1) {
             done = 1;
-            reward = -1;
+            reward = -2;
+        }
+        else if (prevState != null && (curState[0] < prevState[0] - 0.000001)) {
+            done = 1;
+            reward = 3;
         }
         return (reward, done);
     }
@@ -352,14 +398,12 @@ public class RLController {
         float hornetVelX = 0;
         float hornetVelY = 0;
         if (hero != null) {
-            var heroHM = hero.GetComponent<HealthManager>();
             // var sb = new StringBuilder();
             // sb.AppendLine("=== Hornet ===");
-            if (heroHM != null) {
-                hornetHP = heroHM.hp / HealthManagerUtils.GetInitHp(heroHM);
+            hornetHP = (float)hero.playerData.health / hero.playerData.maxHealth;
+
                 // sb.AppendLine($"HP: {heroHM.hp}/{HealthManagerUtils.GetInitHp(heroHM)}");
                 // sb.AppendLine($"Dead: {heroHM.isDead}");
-            }
             // for now just set a fixed max position...
             float MAX_X = 50;
             float MAX_Y = 10;
@@ -415,7 +459,7 @@ public class CombatDebugger : BaseUnityPlugin {
         rLController = new RLController();
     }
     void Update() {
-        Time.timeScale = 2f;
+        Time.timeScale = rLController.TimeScale;
         if (Input.GetKeyDown(KeyCode.Z)) {
             // LogInfo();
             // Logger.LogInfo()
