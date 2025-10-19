@@ -81,12 +81,13 @@ if (recent_checkpoint_pth is not None):
     agent.load_checkpoint(recent_checkpoint_pth)
 
 num_epochs = 10
-check_interval = 10
+check_interval = 6
 seen = set()
 epoch = 0
 buffer_size = 0
-checkpoint_save_interval = 4
+checkpoint_save_interval = 3
 expected_new_sample_num = 300
+allowed_training_epoch = 0
 
 while (True):
     if epoch % check_interval == 0:
@@ -98,19 +99,30 @@ while (True):
                     buffer.push(*s)
             print(f"Loaded {len(new_eps)} new episodes")
             print(f"new buffer size: {buffer.size}, prev buffer size: {buffer_size}")
-        if (buffer.size - buffer_size < expected_new_sample_num):
-            print("Not enough episodes, pausing training...")
+        # if (buffer.size - buffer_size < expected_new_sample_num):
+        #     print("Not enough episodes, pausing training...")
+        #     time.sleep(5)
+        #     continue
+        # else:
+        #     buffer_size = buffer.size
+        allowed_training_epoch += (buffer.size - buffer_size) / 130
+        allowed_training_epoch += buffer_size / 1000
+        buffer_size = buffer.size
+        if allowed_training_epoch < check_interval:
+            print("Not enough data, pausing training...")
             time.sleep(5)
             continue
-        else:
-            buffer_size = buffer.size
 
+    allowed_training_epoch -= 1
     losses = train_from_buffer(agent, buffer, batch_size=128, train_steps=10)
+    mean_loss = sum(losses) / len(losses)
+    print(f"Mean loss: {mean_loss:.6f}")
     epoch += 1
 
     if (epoch % checkpoint_save_interval == 0):
         agent.save_checkpoint()
-
+    # if (allowed_training_epoch <= 0):
+    #     break
     if (epoch > 200):
         break
         
